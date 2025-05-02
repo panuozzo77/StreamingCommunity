@@ -13,21 +13,29 @@ available_colors = ['red', 'magenta', 'yellow', 'cyan', 'green', 'blue', 'white'
 column_to_hide = ['Slug', 'Sub_ita', 'Last_air_date', 'Seasons_count', 'Url', 'Image', 'Path_id']
 
 
-def get_select_title(table_show_manager, media_search_manager):
+def get_select_title(table_show_manager, media_search_manager, preselected_index: int = None):
     """
     Display a selection of titles and prompt the user to choose one.
 
     Returns:
         MediaItem: The selected media item.
     """
-    # Determine column_info dynamically for (search site)
+    # Check if the media list is empty
     if not media_search_manager.media_list:
         console.print("\n[red]No media items available.")
         return None
-    
+
+    # Handle preselected index
+    if preselected_index is not None:
+        if 0 <= preselected_index < len(media_search_manager.media_list):
+            return media_search_manager.get(preselected_index)
+        else:
+            console.print("\n[red]Invalid preselected index.")
+            return None
+
     # Example of available colors for columns
     available_colors = ['red', 'magenta', 'yellow', 'cyan', 'green', 'blue', 'white']
-    
+
     # Retrieve the keys of the first media item as column headers
     first_media_item = media_search_manager.media_list[0]
     column_info = {"Index": {'color': available_colors[0]}}  # Always include Index with a fixed color
@@ -35,7 +43,6 @@ def get_select_title(table_show_manager, media_search_manager):
     # Assign colors to the remaining keys dynamically
     color_index = 1
     for key in first_media_item.__dict__.keys():
-
         if key.capitalize() in column_to_hide:
             continue
 
@@ -78,7 +85,7 @@ def get_select_title(table_show_manager, media_search_manager):
     # Check if the selected index is within range
     if 0 <= int(last_command) < len(media_search_manager.media_list):
         return media_search_manager.get(int(last_command))
-    
+
     else:
         console.print("\n[red]Wrong index")
         sys.exit(0)

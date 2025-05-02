@@ -39,7 +39,7 @@ console = Console()
 msg = Prompt()
 
 
-def run_function(func: Callable[..., None], close_console: bool = False, search_terms: str = None) -> None:
+def run_function(func: Callable[..., None], close_console: bool = False, search_terms: str = None, **kwargs) -> None:
     """
     Run a given function indefinitely or once, depending on the value of close_console.
 
@@ -50,9 +50,9 @@ def run_function(func: Callable[..., None], close_console: bool = False, search_
     """
     if close_console:
         while 1:
-            func(search_terms)
+            func(search_terms, **kwargs)
     else:
-        func(search_terms)
+        func(search_terms, **kwargs)
 
 
 # !!! DA METTERE IN COMUNE CON QUELLA DI GLOBAL
@@ -210,6 +210,19 @@ def main(script_id = 0):
         description='Script to download movies and series from the internet. Use these commands to configure the script and control its behavior.'
     )
 
+    # --- New arguments for direct download ---
+    parser.add_argument('--download-series', type=str,
+                        help='Name of the series to download non-interactively')
+    parser.add_argument('--site', type=str,
+                        help='Site to download from (NUMBERS VIEWED WHILE USING THE SOFTWARE 0: streamingcommunity...) - required with --download-series')
+    parser.add_argument('--index', type=str,
+                        help='Index inserted by the user - required with --download-series')
+    parser.add_argument('--dl-season', type=str,
+                        help='Season number or range (e.g., 1, 1-3, *) - required with --download-series')
+    parser.add_argument('--dl-episodes', type=str,
+                        help='Episode number, range, or * (e.g., 5, 4-6, *) - required with --download-series')
+    # -----------------------------------------
+
     parser.add_argument("script_id", nargs="?", default="unknown", help="ID dello script")
 
     # Add arguments for the main configuration parameters
@@ -252,6 +265,7 @@ def main(script_id = 0):
 
     # Add dynamic arguments based on loaded search modules
     used_short_options = set()
+    used_long_options = set()
 
     for alias, (_, use_for) in search_functions.items():
         short_option = alias[:3].upper()
@@ -311,6 +325,14 @@ def main(script_id = 0):
 
     # Mapping user input to functions
     input_to_function = {str(i): func for i, (alias, (func, _)) in enumerate(search_functions.items())}
+
+    if args.download_series and args.site and args.index and args.dl_season and args.dl_episodes:
+
+        run_function(input_to_function[args.site],
+                     search_terms=args.download_series,
+                     direct_item=args.index,
+                     selections={'season': args.dl_season, 'episode': args.dl_episodes}
+                     )
 
     # Create dynamic prompt message and choices
     choice_labels = {str(i): (alias.split("_")[0].capitalize(), use_for) for i, (alias, (_, use_for)) in enumerate(search_functions.items())}

@@ -79,7 +79,7 @@ def process_search_result(select_title, selections=None):
     else:
         download_film(select_title)
 
-def search(string_to_search: str = None, get_onlyDatabase: bool = False, direct_item: dict = None, selections: dict = None):
+def search(string_to_search: str = None, get_onlyDatabase: bool = False, direct_item: str = None, selections: dict = None):
     """
     Main function of the application for search.
 
@@ -90,9 +90,17 @@ def search(string_to_search: str = None, get_onlyDatabase: bool = False, direct_
         selections (dict, optional): Dictionary containing selection inputs that bypass manual input
                                     {'season': season_selection, 'episode': episode_selection}
     """
-    if direct_item:
-        select_title = MediaItem(**direct_item)
-        process_search_result(select_title, selections)
+
+    if direct_item is not None:
+        if string_to_search:
+            title_search(string_to_search)
+            # Directly select the first search result (index 0)
+            select_title = get_select_title(table_show_manager, media_search_manager, preselected_index=int(direct_item))
+            # Process the automatically selected title
+            process_search_result(select_title, selections)
+        else:
+            # Handle the case where the search yielded no results
+            print("No search results found for direct selection.")
         return
 
     if string_to_search is None:
