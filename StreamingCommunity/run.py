@@ -1,406 +1,116 @@
-# 10.12.23
+# 03.05.2025
 
-import os
 import sys
 import time
-import glob
 import logging
-import platform
-import argparse
-import importlib
-import threading, asyncio
-from typing import Callable
+import argparse # Keep import here for type hinting if needed
+
+# --- Setup Logging ---
+
+from .Util.logger import Logger # Assuming Logger setup logging on import
+log_not = Logger() # Instantiating might configure it
+
+# --- Import Modularized Components ---
+try:
+    from StreamingCommunity.Util.Main.config_handler import apply_config_updates_from_args, TELEGRAM_BOT, CLOSE_CONSOLE
+    from StreamingCommunity.Util.Main.provider_loader import load_search_functions
+    from StreamingCommunity.Util.Main.argument_parser import setup_parser
+    from StreamingCommunity.Util.Main.initialization import initialize_app
+    from StreamingCommunity.Util.Main.execution_handler import handle_execution
+    from StreamingCommunity.Util.Main.utils import restart_script, force_exit # Import utils
+    from StreamingCommunity.TelegramHelp.telegram_bot import get_bot_instance, TelegramSession # For init/cleanup
+except ImportError as e:
+    print(f"Fatal Error: Failed to import core modules. Check structure and dependencies: {e}", file=sys.stderr)
+    sys.exit(1)
 
 
-# External library
-from rich.console import Console
-from rich.prompt import Prompt
-
-
-# Internal utilities
-from .global_search import global_search
-from StreamingCommunity.Util.message import start_message
-from StreamingCommunity.Util.config_json import config_manager
-from StreamingCommunity.Util.os import os_summary
-from StreamingCommunity.Util.logger import Logger
-from StreamingCommunity.Upload.update import update as git_update
-from StreamingCommunity.Lib.TMBD import tmdb
-from StreamingCommunity.TelegramHelp.telegram_bot import get_bot_instance, TelegramSession
-
-
-# Config
-SHOW_TRENDING = config_manager.get_bool('DEFAULT', 'show_trending')
-CLOSE_CONSOLE = config_manager.get_bool('DEFAULT', 'not_close')
-TELEGRAM_BOT = config_manager.get_bool('DEFAULT', 'telegram_bot')
-
-
-# Variable
-console = Console()
-msg = Prompt()
-
-
-def run_function(func: Callable[..., None], close_console: bool = False, search_terms: str = None, **kwargs) -> None:
-    """
-    Run a given function indefinitely or once, depending on the value of close_console.
-
-    Parameters:
-        func (Callable[..., None]): The function to run.
-        close_console (bool, optional): Whether to close the console after running the function once. Defaults to False.
-        search_terms (str, optional): Search terms to use for the function. Defaults to None.
-    """
-    if close_console:
-        while 1:
-            func(search_terms, **kwargs)
-    else:
-        func(search_terms, **kwargs)
-
-
-# !!! DA METTERE IN COMUNE CON QUELLA DI GLOBAL
-def load_search_functions():
-    modules = []
-    loaded_functions = {}
-
-    # Lista dei siti da escludere se TELEGRAM_BOT è attivo
-    excluded_sites = {"cb01new", "ddlstreamitaly", "guardaserie", "ilcorsaronero", "mostraguarda"} if TELEGRAM_BOT else set()
-
-    # Find api home directory
-    if getattr(sys, 'frozen', False):  # Modalità PyInstaller
-        base_path = os.path.join(sys._MEIPASS, "StreamingCommunity")
-    else:
-        base_path = os.path.dirname(__file__)
-
-    api_dir = os.path.join(base_path, 'Api', 'Site')
-    init_files = glob.glob(os.path.join(api_dir, '*', '__init__.py'))
-
-    # Retrieve modules and their indices
-    for init_file in init_files:
-
-        # Get folder name as module name
-        module_name = os.path.basename(os.path.dirname(init_file))
-
-        # Se il modulo è nella lista da escludere, saltalo
-        if module_name in excluded_sites:
-            continue
-
-        logging.info(f"Load module name: {module_name}")
-
-        try:
-            # Dynamically import the module
-            mod = importlib.import_module(f'StreamingCommunity.Api.Site.{module_name}')
-
-            # Get 'indice' from the module
-            indice = getattr(mod, 'indice', 0)
-            use_for = getattr(mod, '_useFor', 'other')
-            modules.append((module_name, indice, use_for))
-
-        except Exception as e:
-            console.print(f"[red]Failed to import module {module_name}: {str(e)}")
-
-    # Sort modules by 'indice'
-    modules.sort(key=lambda x: x[1])
-
-    # Load search functions in the sorted order
-    for module_name, _, use_for in modules:
-
-        # Construct a unique alias for the module
-        module_alias = f'{module_name}_search'
-
-        try:
-
-            # Dynamically import the module
-            mod = importlib.import_module(f'StreamingCommunity.Api.Site.{module_name}')
-
-            # Get the search function from the module (assuming the function is named 'search' and defined in __init__.py)
-            search_function = getattr(mod, 'search')
-
-            # Add the function to the loaded functions dictionary
-            loaded_functions[module_alias] = (search_function, use_for)
-
-        except Exception as e:
-            console.print(f"[red]Failed to load search function from module {module_name}: {str(e)}")
-
-    return loaded_functions
-
-
-def initialize():
-
-    # Get start message
-    start_message()
-
-    # Get system info
-    os_summary.get_system_summary()
-
-    # Set terminal size for win 7
-    if platform.system() == "Windows" and "7" in platform.version():
-        os.system('mode 120, 40')
-
-    # Check python version
-    if sys.version_info < (3, 7):
-        console.log("[red]Install python version > 3.7.16")
-        sys.exit(0)
-
-    # Trending tmbd
-    if SHOW_TRENDING:
-        print()
-        tmdb.display_trending_films()
-        tmdb.display_trending_tv_shows()
-
-    # Attempting GitHub update
-    try:
-        git_update()
-    except:
-        console.log("[red]Error with loading github.")
-
-def restart_script():
-    """Riavvia lo script con gli stessi argomenti della riga di comando."""
-    print("\nRiavvio dello script...\n")
-    python = sys.executable
-    os.execv(python, [python] + sys.argv)
-
-
-def force_exit():
-    """Forza la chiusura dello script in qualsiasi contesto."""
-
-    print("\nChiusura dello script in corso...")
-
-    # 1 Chiudi tutti i thread tranne il principale
-    for t in threading.enumerate():
-        if t is not threading.main_thread():
-            print(f"Chiusura thread: {t.name}")
-            t.join(timeout=1)
-
-    # 2 Ferma asyncio, se attivo
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            print("Arresto del loop asyncio...")
-            loop.stop()
-    except RuntimeError:
-        pass
-
-    # 3 Esce con sys.exit(), se fallisce usa os._exit()
-    try:
-        print("Uscita con sys.exit(0)")
-        sys.exit(0)
-    except SystemExit:
-        pass
-
-    print("Uscita forzata con os._exit(0)")
-    os._exit(0)
-
-
-def main(script_id = 0):
+def main(script_id_arg="unknown"):
+    """Main function encapsulating the application logic."""
 
     if TELEGRAM_BOT:
-        bot = get_bot_instance()
-        bot.send_message(f"Avviato script {script_id}", None)
+        # Initialize bot instance early if needed globally
+        try:
+            bot = get_bot_instance()
+            bot.send_message(f"Script instance '{script_id_arg}' started.", None)
+            # Store script_id in session
+            if script_id_arg != "unknown":
+                 TelegramSession.set_session(script_id_arg)
+        except Exception as e:
+            logging.error(f"Failed to initialize or notify Telegram Bot: {e}")
+            # Decide if this is fatal or continue without bot features
+            print("[Warning] Could not initialize Telegram features.", file=sys.stderr)
 
-    start = time.time()
 
-    # Create logger
-    log_not = Logger()
-    initialize()
+    start_time = time.time()
+    logging.info(f"--- Application Start (ID: {script_id_arg}) ---")
 
-    # Load search functions
-    search_functions = load_search_functions()
-    logging.info(f"Load module in: {time.time() - start} s")
+    try:
+        # 1. Initialization
+        initialize_app()
 
-    # Create argument parser
-    parser = argparse.ArgumentParser(
-        description='Script to download movies and series from the internet. Use these commands to configure the script and control its behavior.'
-    )
+        # 2. Load Providers
+        logging.info("Loading provider functions...")
+        search_functions = load_search_functions()
+        if not search_functions:
+             logging.warning("No provider search functions were loaded. Check logs.")
+             # Decide if execution can continue or should exit
+             print("[Warning] No search providers loaded. Functionality will be limited.", file=sys.stderr)
+             # force_exit() # Exit if providers are essential
 
-    # --- New arguments for direct download ---
-    parser.add_argument('--download-series', type=str,
-                        help='Name of the series to download non-interactively')
-    parser.add_argument('--site', type=str,
-                        help='Site to download from (NUMBERS VIEWED WHILE USING THE SOFTWARE 0: streamingcommunity...) - required with --download-series')
-    parser.add_argument('--index', type=str,
-                        help='Index inserted by the user - required with --download-series')
-    parser.add_argument('--dl-season', type=str,
-                        help='Season number or range (e.g., 1, 1-3, *) - required with --download-series')
-    parser.add_argument('--dl-episodes', type=str,
-                        help='Episode number, range, or * (e.g., 5, 4-6, *) - required with --download-series')
-    # -----------------------------------------
+        logging.info(f"Providers loaded in: {time.time() - start_time:.2f} s")
 
-    parser.add_argument("script_id", nargs="?", default="unknown", help="ID dello script")
+        # 3. Setup and Parse Arguments
+        parser = setup_parser(search_functions)
+        args = parser.parse_args()
 
-    # Add arguments for the main configuration parameters
-    parser.add_argument(
-        '--add_siteName', type=bool, help='Enable or disable adding the site name to the file name (e.g., true/false).'
-    )
-    parser.add_argument(
-        '--not_close', type=bool, help='If set to true, the script will not close the console after execution (e.g., true/false).'
-    )
+        # Update script_id if provided via args (overrides default/generated)
+        script_id = args.script_id if args.script_id != "unknown" else script_id_arg
+        if script_id == "unknown":
+             # Generate a default ID if none provided
+             script_id = f"session_{int(time.time())}"
+             logging.info(f"Using generated script ID: {script_id}")
 
-    # Add arguments for M3U8 configuration
-    parser.add_argument(
-        '--default_video_worker', type=int, help='Number of workers for video during M3U8 download (default: 12).'
-    )
-    parser.add_argument(
-        '--default_audio_worker', type=int, help='Number of workers for audio during M3U8 download (default: 12).'
-    )
 
-    # Add options for audio and subtitles
-    parser.add_argument(
-        '--specific_list_audio', type=str, help='Comma-separated list of specific audio languages to download (e.g., ita,eng).'
-    )
-    parser.add_argument(
-        '--specific_list_subtitles', type=str, help='Comma-separated list of specific subtitle languages to download (e.g., eng,spa).'
-    )
+        # 4. Apply Config Updates from Args
+        apply_config_updates_from_args(args) # This also updates runtime constants like CLOSE_CONSOLE
 
-    # Add global search option
-    parser.add_argument(
-        '--global', action='store_true', help='Perform a global search across multiple sites.'
-    )
+        # 5. Handle Execution based on Args/Interaction
+        handle_execution(args, search_functions)
 
-    # Add arguments for search functions
-    color_map = {
-        "anime": "red",
-        "film_serie": "yellow",
-        "film": "blue",
-        "serie": "green",
-        "other": "white"
-    }
+        logging.info(f"--- Execution Completed (ID: {script_id}) ---")
 
-    # Add dynamic arguments based on loaded search modules
-    used_short_options = set()
-    used_long_options = set()
-
-    for alias, (_, use_for) in search_functions.items():
-        short_option = alias[:3].upper()
-    
-        original_short_option = short_option
-        count = 1
-        while short_option in used_short_options:
-            short_option = f"{original_short_option}{count}"
-            count += 1
-    
-        used_short_options.add(short_option)
-        long_option = alias
-        parser.add_argument(f'-{short_option}', f'--{long_option}', action='store_true', help=f'Search for {alias.split("_")[0]} on streaming platforms.')
-
-    parser.add_argument('-s', '--search', default=None, help='Search terms')
-    
-    # Parse command-line arguments
-    args = parser.parse_args()
-
-    search_terms = args.search
-    # Map command-line arguments to the config values
-    config_updates = {}
-
-    if args.add_siteName is not None:
-        config_updates['DEFAULT.add_siteName'] = args.add_siteName
-    if args.not_close is not None:
-        config_updates['DEFAULT.not_close'] = args.not_close
-    if args.default_video_worker is not None:
-        config_updates['M3U8_DOWNLOAD.default_video_worker'] = args.default_video_worker
-    if args.default_audio_worker is not None:
-        config_updates['M3U8_DOWNLOAD.default_audio_worker'] = args.default_audio_worker
-    if args.specific_list_audio is not None:
-        config_updates['M3U8_DOWNLOAD.specific_list_audio'] = args.specific_list_audio.split(',')
-    if args.specific_list_subtitles is not None:
-        config_updates['M3U8_DOWNLOAD.specific_list_subtitles'] = args.specific_list_subtitles.split(',')
-
-    # Apply the updates to the config file
-    for key, value in config_updates.items():
-        section, option = key.split('.')
-        config_manager.set_key(section, option, value)
-
-    config_manager.save_config()
-
-    # Check if global search is requested
-    if getattr(args, 'global'):
-        global_search(search_terms)
-        return
-
-    # Map command-line arguments to functions
-    arg_to_function = {alias: func for alias, (func, _) in search_functions.items()}
-
-    # Check which argument is provided and run the corresponding function
-    for arg, func in arg_to_function.items():
-        if getattr(args, arg):
-            run_function(func, search_terms=search_terms)
-            return
-
-    # Mapping user input to functions
-    input_to_function = {str(i): func for i, (alias, (func, _)) in enumerate(search_functions.items())}
-
-    if args.download_series and args.site and args.index and args.dl_season and args.dl_episodes:
-
-        run_function(input_to_function[args.site],
-                     search_terms=args.download_series,
-                     direct_item=args.index,
-                     selections={'season': args.dl_season, 'episode': args.dl_episodes}
-                     )
-
-    # Create dynamic prompt message and choices
-    choice_labels = {str(i): (alias.split("_")[0].capitalize(), use_for) for i, (alias, (_, use_for)) in enumerate(search_functions.items())}
-
-    # Add global search option to the menu
-    #global_search_key = str(len(choice_labels))
-    #choice_labels[global_search_key] = ("Global Search", "all")
-    #input_to_function[global_search_key] = global_search
-
-    # Display the category legend in a single line
-    legend_text = " | ".join([f"[{color}]{category.capitalize()}[/{color}]" for category, color in color_map.items()])
-    console.print(f"\n[bold green]Category Legend:[/bold green] {legend_text}")
-
-    # Construct the prompt message with color-coded site names
-    prompt_message = "[green]Insert category [white](" + ", ".join(
-        [f"{key}: [{color_map.get(label[1], 'white')}]{label[0]}[/{color_map.get(label[1], 'white')}]" for key, label in choice_labels.items()]
-    ) + "[white])"
-
-    if TELEGRAM_BOT:
-        
-        # Display the category legend in a single line
-        category_legend_str = "Categorie: \n" + " | ".join([
-            f"{category.capitalize()}" for category in color_map.keys()
-        ])
-
-        # Costruisci il messaggio senza emoji
-        prompt_message = "Inserisci il sito:\n" + "\n".join(
-            [f"{key}: {label[0]}" for key, label in choice_labels.items()]
-        )
-
-        console.print(f"\n{prompt_message}")
-
-        # Chiedi la scelta all'utente con il bot Telegram
-        category = bot.ask(
-            "select_provider",
-            f"{category_legend_str}\n\n{prompt_message}",
-            None  # Passiamo la lista delle chiavi come scelte
-        )
-
-    else:
-        category = msg.ask(prompt_message, choices=list(choice_labels.keys()), default="0", show_choices=False, show_default=False)
-
-    # Run the corresponding function based on user input
-    if category in input_to_function:
-        """if category == global_search_key:
-            # Run global search
-            run_function(input_to_function[category], search_terms=search_terms)
-        
-        else:"""
-        
-        # Run normal site-specific search
-        run_function(input_to_function[category], search_terms=search_terms)
-        
-    else:
+    except KeyboardInterrupt:
+        print("\nKeyboard interrupt received. Exiting...")
+        logging.warning("KeyboardInterrupt received.")
+        # Perform cleanup before forced exit
         if TELEGRAM_BOT:
-            bot.send_message(f"Categoria non valida", None)
+            script_id_tg = TelegramSession.get_session()
+            if script_id_tg != "unknown":
+                 TelegramSession.deleteScriptId(script_id_tg)
+        force_exit()
+    except Exception as e:
+        logging.critical(f"An unhandled critical error occurred: {e}", exc_info=True)
+        print(f"\n[bold red]A critical error occurred. Check logs for details.[/bold red]")
+        # Perform cleanup before forced exit
+        if TELEGRAM_BOT:
+             script_id_tg = TelegramSession.get_session()
+             if script_id_tg != "unknown":
+                  TelegramSession.deleteScriptId(script_id_tg)
+        force_exit() # Ensure exit even on critical error
 
-        console.print("[red]Invalid category.")
+    finally:
+        # Final cleanup, might be redundant if force_exit used os._exit
+        logging.info(f"--- Application End (ID: {script_id}) ---")
+        # Ensure Telegram session is cleared if script exits normally without force_exit
+        # (e.g., non-looping mode finishes)
+        if TELEGRAM_BOT and not CLOSE_CONSOLE: # Only cleanup if not looping/restarting
+             script_id_tg = TelegramSession.get_session()
+             if script_id_tg != "unknown":
+                 TelegramSession.deleteScriptId(script_id_tg)
 
-        if CLOSE_CONSOLE:
-            restart_script()  # Riavvia lo script invece di uscire
-        else:
-            force_exit()  # Usa la funzione per chiudere sempre
 
-            if TELEGRAM_BOT:
-                bot.send_message(f"Chiusura in corso", None)
-
-                # Delete script_id
-                script_id = TelegramSession.get_session()
-                if script_id != "unknown":
-                    TelegramSession.deleteScriptId(script_id)
+if __name__ == "__main__":
+    # Pass script_id from command line if available, else default 'unknown'
+    # Note: argparse handles this, but we might want it before parsing for early TG message
+    sid = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith('-') else "unknown"
+    run_main(script_id_arg=sid)
