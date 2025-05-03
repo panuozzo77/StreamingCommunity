@@ -163,7 +163,7 @@ msg = Prompt()
 # Keep get_user_input if it has *very specific* logic not covered by unified one.
 # Otherwise, it can be removed as unified_get_user_input handles the core logic.
 # Let's assume unified_get_user_input is sufficient for now.
-'''
+
 def process_search_result(select_title: MediaItem, selections: dict | None = None, **kwargs):
     """
     Handles the search result for this specific provider.
@@ -191,7 +191,7 @@ def process_search_result(select_title: MediaItem, selections: dict | None = Non
     else:
         # Call the specific download function for this provider
         download_film(select_title)
-'''
+
 
 # --- The Main Search Function (Now a Wrapper) ---
 

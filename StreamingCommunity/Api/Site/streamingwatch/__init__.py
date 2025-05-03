@@ -1,11 +1,15 @@
 # 29.04.25
 
+import sys
+
 # External library
 from rich.console import Console
 from rich.prompt import Prompt
 
 
 # Internal utilities
+from StreamingCommunity.Api.Template.search_utils import unified_search
+
 from StreamingCommunity.Api.Template import get_select_title
 from StreamingCommunity.Lib.Proxies.proxy import ProxyFinder
 from StreamingCommunity.Api.Template.config_loader import site_constant
@@ -58,38 +62,47 @@ def process_search_result(select_title, selections=None, proxy=None):
     else:
         download_film(select_title, proxy)
 
-def search(string_to_search: str = None, get_onlyDatabase: bool = False, direct_item: dict = None, selections: dict = None):
-    """
-    Main function of the application for search.
+def search(
+    string_to_search: str = None,
+    get_onlyDatabase: bool = False,
+    direct_item: dict | None = None, # Assuming dict is standard now
+    selections: dict | None = None
+):
+    """Search wrapper for streamingwatch, handles proxy finding."""
+    provider_module = sys.modules[__name__]
 
-    Parameters:
-        string_to_search (str, optional): String to search for
-        get_onlyDatabase (bool, optional): If True, return only the database object
-        direct_item (dict, optional): Direct item to process (bypass search)
-        selections (dict, optional): Dictionary containing selection inputs that bypass manual input
-                                    {'season': season_selection, 'episode': episode_selection}
-    """
-    if direct_item:
-        select_title = MediaItem(**direct_item)
-        process_search_result(select_title, selections) # DONT SUPPORT PROXY FOR NOW
-        return
+    # --- Provider-Specific Setup (Proxy Finding) ---
+    proxy = None
+    search_args = []
+    process_kwargs = {}
+    try:
+        # Note: Finding proxy might need adjustment based on actual ProxyFinder usage
+        # This is just illustrative. You might want error handling here.
+        finder = ProxyFinder(url=f"{site_constant.FULL_URL}/serie/euphoria/") # Example URL
+        proxy, response_serie, _ = finder.find_fast_proxy()
+        if proxy:
+            search_args = [[proxy, response_serie]] # Pass proxy info to title_search
+            process_kwargs = {'proxy': proxy} # Pass proxy to process_search_result
+        else:
+            console.print("[red]Could not find a working proxy for streamingwatch.")
+            # Decide how to proceed: return, raise error, try without proxy?
+            # For now, let unified_search proceed without proxy args, it might fail later.
+            pass
+    except Exception as e:
+         console.print(f"[red]Error finding proxy: {e}")
+         # Proceed without proxy?
 
-    if string_to_search is None:
-        string_to_search = msg.ask(f"\n[purple]Insert a word to search in [green]{site_constant.SITE_NAME}").strip()
-    
-    finder = ProxyFinder(url=f"{site_constant.FULL_URL}/serie/euphoria/")
-    proxy, response_serie, _ = finder.find_fast_proxy()
-    len_database = title_search(string_to_search, [proxy, response_serie])
-
-    # If only the database is needed, return the manager
-    if get_onlyDatabase:
-        return media_search_manager
-    
-    if len_database > 0:
-        select_title = get_select_title(table_show_manager, media_search_manager)
-        process_search_result(select_title, selections, proxy)
-    
-    else:
-        # If no results are found, ask again
-        console.print(f"\n[red]Nothing matching was found for[white]: [purple]{string_to_search}")
-        search()
+    # Call unified search
+    unified_search(
+        provider_module=provider_module,
+        string_to_search=string_to_search,
+        get_onlyDatabase=get_onlyDatabase,
+        direct_item=direct_item,
+        selections=selections,
+        # Provider specific flags/details:
+        use_telegram=False, # This provider didn't use Telegram
+        use_quote_plus=False, # This provider didn't use quote_plus
+        provider_name=site_constant.SITE_NAME, # Adjust if needed
+        search_func_args=search_args, # Pass proxy info list
+        process_func_kwargs=process_kwargs # Pass proxy dict
+    )

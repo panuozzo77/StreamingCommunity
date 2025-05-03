@@ -20,7 +20,7 @@ from StreamingCommunity.TelegramHelp.telegram_bot import get_bot_instance
 console = Console()
 msg = Prompt()
 
-
+'''
 def process_search_result(provider_module, select_title, selections=None):
     """
     Handles the search result and initiates the download for either a film or series.
@@ -42,6 +42,7 @@ def process_search_result(provider_module, select_title, selections=None):
 
     else:
         provider_module.film.download_film(select_title)
+'''
 
 def unified_get_user_input(
     provider_name: str,
@@ -105,19 +106,20 @@ def unified_search(
         process_func_kwargs (dict, optional): Additional keyword args for provider_module.process_search_result.
     """
     if search_func_args is None:
-        search_func_args = []
+        search_func_args = [] # is for additionalData in title_search for StreamingWatch
     if process_func_kwargs is None:
-        process_func_kwargs = {}
+        process_func_kwargs = {} # is for proxy in process_search_result for StreamingWatch
 
     select_title = None
 
     # --- Direct Item Handling ---
     if direct_item is not None:
             try:
-                provider_module.site.title_search(string_to_search)
+                provider_module.site.title_search(string_to_search, *search_func_args)
                 select_title = get_select_title(provider_module.site.table_show_manager, provider_module.site.media_search_manager, preselected_index=int(direct_item))
                 # Directly process if we have the full object
-                process_search_result(provider_module, select_title, selections, **process_func_kwargs)
+                #process_search_result(provider_module, select_title, selections, **process_func_kwargs)
+                provider_module.process_search_result(select_title, selections, **process_func_kwargs)
                 return
             except Exception as e:
                 console.print(f"[red]Error processing direct_item dict: {e}")
@@ -132,7 +134,7 @@ def unified_search(
         string_to_search = msg.ask(f"\n[purple]Insert a word to search in [green]{site_constant.SITE_NAME}").strip()
 
         # Search on database
-    len_database = provider_module.title_search(string_to_search)
+    len_database = provider_module.title_search(string_to_search, *search_func_args)
 
     # If only the database is needed, return the manager
     if get_onlyDatabase:
@@ -140,7 +142,7 @@ def unified_search(
 
     if len_database > 0:
         select_title = get_select_title(provider_module.table_show_manager, provider_module.media_search_manager)
-        process_search_result(provider_module, select_title, selections)
+        provider_module.process_search_result(select_title, selections, **process_func_kwargs)
 
     else:
         # If no results are found, ask again
