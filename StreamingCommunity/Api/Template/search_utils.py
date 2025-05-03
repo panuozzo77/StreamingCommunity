@@ -20,30 +20,8 @@ from StreamingCommunity.TelegramHelp.telegram_bot import get_bot_instance
 console = Console()
 msg = Prompt()
 
-'''
-def process_search_result(provider_module, select_title, selections=None):
-    """
-    Handles the search result and initiates the download for either a film or series.
 
-    Parameters:
-        select_title (MediaItem): The selected media item
-        selections (dict, optional): Dictionary containing selection inputs that bypass manual input
-                                    {'season': season_selection, 'episode': episode_selection}
-    """
-    if select_title.type == 'tv':
-        season_selection = None
-        episode_selection = None
-
-        if selections:
-            season_selection = selections.get('season')
-            episode_selection = selections.get('episode')
-
-        provider_module.series.download_series(select_title, season_selection, episode_selection)
-
-    else:
-        provider_module.film.download_film(select_title)
-'''
-
+# --- Da rimuovere ---
 def unified_get_user_input(
     provider_name: str,
     string_to_search: str = None,

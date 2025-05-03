@@ -1,4 +1,5 @@
 # 21.03.25
+import sys
 
 # External library
 from rich.console import Console
@@ -6,6 +7,8 @@ from rich.prompt import Prompt
 
 
 # Internal utilities
+from StreamingCommunity.Api.Template.search_utils import unified_search
+
 from StreamingCommunity.Api.Template import get_select_title
 from StreamingCommunity.Api.Template.config_loader import site_constant
 from StreamingCommunity.Api.Template.Class.SearchType import MediaItem
@@ -15,7 +18,6 @@ from StreamingCommunity.Api.Template.Class.SearchType import MediaItem
 from .site import title_search, media_search_manager, table_show_manager
 from .serie import download_series
 from .film import download_film
-
 
 # Variable
 indice = 8
@@ -46,6 +48,34 @@ def process_search_result(select_title, selections=None):
     else:
         download_film(select_title)
 
+def search(
+    string_to_search: str = None,
+    get_onlyDatabase: bool = False,
+    direct_item: str = None, # Accept str index or dict
+    selections: dict | None = None
+):
+    """
+    Main search function for the streamingcommunity provider.
+    Calls the unified search logic.
+    """
+    # Pass the current module to the unified function
+    provider_module = sys.modules[__name__]
+
+    # Call the unified search function with provider-specific settings
+    unified_search(
+        provider_module=provider_module,
+        string_to_search=string_to_search,
+        get_onlyDatabase=get_onlyDatabase,
+        direct_item=direct_item,
+        selections=selections,
+        # Provider specific flags/details:
+        use_telegram=(site_constant.TELEGRAM_BOT is True), # Check if Telegram is enabled
+        use_quote_plus=False, # This provider didn't use quote_plus in the original search call
+        provider_name=site_constant.SITE_NAME, # Get name from config
+        search_func_args=None, # No extra args needed for this provider's title_search
+        process_func_kwargs=None # No extra kwargs needed for this provider's process_search_result
+    )
+'''
 def search(string_to_search: str = None, get_onlyDatabase: bool = False, direct_item: dict = None, selections: dict = None):
     """
     Main function of the application for search.
@@ -81,3 +111,4 @@ def search(string_to_search: str = None, get_onlyDatabase: bool = False, direct_
         # If no results are found, ask again
         console.print(f"\n[red]Nothing matching was found for[white]: [purple]{string_to_search}")
         search()
+'''
